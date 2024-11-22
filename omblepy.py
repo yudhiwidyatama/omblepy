@@ -37,7 +37,8 @@ class bluetoothTxRxHandler:
                                 "0ae12b00-aee8-11e1-a192-0002a5d5c51b",
                                 "10e1ba60-aee8-11e1-89e5-0002a5d5c51b"
                             ]
-    deviceDataRxChannelIntHandles = [0x360, 0x370, 0x380, 0x390]
+    #deviceDataRxChannelIntHandles = [0x360, 0x370, 0x380, 0x390 ]
+    deviceDataRxChannelIntHandles = [31,0x31 ]
     deviceUnlock_UUID         = "b305b680-aee7-11e1-a730-0002a5d5c51b"
 
     def __init__(self, pairing = False):
@@ -51,13 +52,19 @@ class bluetoothTxRxHandler:
     async def _enableRxChannelNotifyAndCallback(self):
         if(self.currentRxNotifyStateFlag != True):
             for rxChannelUUID in self.deviceRxChannelUUIDs:
-                await bleClient.start_notify(rxChannelUUID, self._callbackForRxChannels)
+                try:
+                    await bleClient.start_notify(rxChannelUUID, self._callbackForRxChannels)
+                except:
+                    logger.info(f"Failed notify callback on {rxChannelUUID}")
             self.currentRxNotifyStateFlag = True
 
     async def _disableRxChannelNotifyAndCallback(self):
         if(self.currentRxNotifyStateFlag != False):
             for rxChannelUUID in self.deviceRxChannelUUIDs:
-                await bleClient.stop_notify(rxChannelUUID)
+                try:
+                    await bleClient.stop_notify(rxChannelUUID)
+                except:
+                    logger.info(f"Failed disabling callback on {rxChannelUUID}")
             self.currentRxNotifyStateFlag = False
 
     def _callbackForRxChannels(self, BleakGATTChar, rxBytes):
@@ -362,29 +369,37 @@ async def main():
         await bleClient.connect()
         await asyncio.sleep(0.5)
         await bleClient.pair(protection_level = 2)
+        devSpecificDriver = deviceSpecific.deviceSpecificDriver()
         #verify that the device is an omron device by checking presence of certain bluetooth services
-        if parentService_UUID not in [service.uuid for service in bleClient.services]:
-            raise OSError("""Some required bluetooth attributes not found on this ble device.
+        if devSpecificDriver.deviceCheckParentUUID:
+            if parentService_UUID not in [service.uuid for service in bleClient.services]:
+                logger.info(f"Looking for uuid {parentService_UUID}.")
+                for service in bleClient.services:
+                    logger.info(f"Service uuid : {service.uuid}.") 
+                raise OSError("""Some required bluetooth attributes not found on this ble device.
                              This means that either, you connected to a wrong device,
                              or that your OS has a bug when reading BT LE device attributes (certain linux versions).""")
-            return
+                return
         bluetoothTxRxObj = bluetoothTxRxHandler()
         if(args.pair):
-            await bluetoothTxRxObj.writeNewUnlockKey()
+            if devSpecificDriver.deviceUseLockUnlock:
+                await bluetoothTxRxObj.writeNewUnlockKey()
             #this seems to be necessary when the device has not been paired to any device
             await bluetoothTxRxObj.startTransmission()
             await bluetoothTxRxObj.endTransmission()
         else:
             logger.info("communication started")
-            devSpecificDriver = deviceSpecific.deviceSpecificDriver()
+            
             allRecs = await devSpecificDriver.getRecords(btobj = bluetoothTxRxObj, useUnreadCounter = args.newRecOnly, syncTime = args.timeSync)
             logger.info("communication finished")
             appendCsv(allRecs)
             saveUBPMJson(allRecs)
+    except Exception as e: 
+        logger.error("Error occured : " + str(e))
     finally:
         logger.info("unpair and disconnect")
         if bleClient.is_connected:
-            await bleClient.unpair()
+#            await bleClient.unpair()
             try:
                 await bleClient.disconnect()
             except AssertionError as e:

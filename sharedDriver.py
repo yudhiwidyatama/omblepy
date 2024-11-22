@@ -12,6 +12,8 @@ class sharedDeviceDriverCode():
     settingsWriteAddress       = None
     settingsUnreadRecordsBytes = None
     settingsTimeSyncBytes      = None
+    deviceCheckParentUUID = True
+    deviceUseLockUnlock = True
     
     #abstract method, implemented by the device specific driver
     def deviceSpecific_ParseRecordFormat(self, singleRecordAsByteArray):
@@ -36,7 +38,8 @@ class sharedDeviceDriverCode():
         self.cachedSettingsBytes[slice(*self.settingsUnreadRecordsBytes)] = newUnreadRecordSettings
     
     async def getRecords(self, btobj, useUnreadCounter, syncTime):
-        await btobj.unlockWithUnlockKey()
+        if self.deviceUseLockUnlock:
+            await btobj.unlockWithUnlockKey()
         await btobj.startTransmission()
         
         #cache settings for time sync and for unread record counter
